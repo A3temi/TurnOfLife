@@ -9,15 +9,15 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"; // Use environment variable or default
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://18.141.243.44"; // Your public IP or domain
 
 // Create server and Socket.IO instance
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: FRONTEND_URL,
+        origin: [FRONTEND_URL], // Allow only your frontend URL
         methods: ["GET", "POST"],
-        credentials: true,
+        credentials: true, // Include cookies if needed
     },
 });
 
@@ -27,7 +27,7 @@ gameManager.startCleanupInterval();
 
 // Middleware
 app.use(cors({
-    origin: FRONTEND_URL,
+    origin: [FRONTEND_URL], // Allow only your frontend URL
     methods: ["GET", "POST"],
     credentials: true,
 }));
