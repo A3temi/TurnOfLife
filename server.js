@@ -46,5 +46,5 @@ io.on('connection', (socket) => {
     gameManager.setupSocketHandlers(socket);
 });
 
-const PORT = 80;
+const PORT = 3001;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
