@@ -8,45 +8,60 @@ const gameManager = require('./calls/gameManager');
 require('dotenv').config();
 
 const app = express();
+const PORT = process.env.PORT || 3001;
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000"; // Use environment variable or default
+
+// Create server and Socket.IO instance
 const server = http.createServer(app);
-const io = require('socket.io')(server, {
+const io = new Server(server, {
     cors: {
-        origin: "http://localhost:3000", // Your frontend URL
+        origin: FRONTEND_URL,
         methods: ["GET", "POST"],
-        credentials: true
-    }
+        credentials: true,
+    },
 });
 
-
-// Now initialize gameManager after io is created
+// Initialize game manager
 gameManager.initialize(io);
 gameManager.startCleanupInterval();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: FRONTEND_URL,
+    methods: ["GET", "POST"],
+    credentials: true,
+}));
 app.use(express.json());
 
-// Use auth routes
+// API Routes
 app.use('/api/auth', authRoutes);
 
-// Serve static files from the React build directory
-app.use(express.static(path.join(__dirname, '/frontend/build')));
+// Serve static files from the React frontend
+const frontendPath = path.join(__dirname, '/frontend/build');
+app.use(express.static(frontendPath));
 
-// API routes
-app.get('/api/health', (req, res) => res.send('Server is running'));
+// Health check
+app.get('/api/health', (req, res) => {
+    console.log('Health check requested');
+    res.status(200).send('Server is running');
+});
 
-// Serve React app for any other routes
+// Fallback to serve React app for unknown routes
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '/frontend/build', 'index.html'));
+    res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-// Socket.IO logic
+// Socket.IO connection
 io.on('connection', (socket) => {
-    console.log('New client connected');
+    console.log('New client connected:', socket.id);
     gameManager.setupSocketHandlers(socket);
+
+    socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id);
+    });
 });
 
-const PORT = 3001;
+// Start the server
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
