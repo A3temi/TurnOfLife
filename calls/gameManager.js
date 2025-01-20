@@ -98,7 +98,7 @@ class GameManager {
                     winners: [],
                     host: socket.id,
                     details: { 
-                        status: 'on-going',
+                        status: 'lobby',
                         year: 0, 
                         currentPlayer: {},
                         end: false,
@@ -146,6 +146,33 @@ class GameManager {
                 }
             }
         });
+
+        socket.on('getCurrentTurn', ({ gameCode }, callback) => {
+            try {
+                // Fetch the game from the server's game storage
+                const game = this.games.get(gameCode);
+        
+                // Check if the game exists
+                if (!game) {
+                    console.log(`Game not found: ${gameCode}`);
+                    return callback({ success: false, error: 'Game not found' });
+                }
+        
+                // Retrieve the current player details
+                const currentPlayer = game.details.currentPlayer;
+        
+                if (!currentPlayer) {
+                    console.log(`Current player not set for game: ${gameCode}`);
+                    return callback({ success: false, error: 'Current player not found' });
+                }
+        
+                // Respond with the current player information
+                callback({ success: true, currentPlayer });
+            } catch (error) {
+                console.error('Error in getCurrentTurn:', error);
+                callback({ success: false, error: 'An unexpected error occurred' });
+            }
+        });        
 
         // Fetch boardSquares from game details
         socket.on('getBoardSquares', ({ gameCode }, callback = () => {}) => {
@@ -214,32 +241,58 @@ class GameManager {
         });
     
         // Check Game Code Handler
-        socket.on('checkGameCode', ({ gameCode }, callback = () => {}) => {
+        socket.on('checkGameCode', ({ gameCode, playerToken, username }, callback = () => {}) => {
             try {
                 const game = this.games.get(gameCode);
-                
+
+                // If the game doesn't exist, return immediately
                 if (!game) {
-                    if (typeof callback === 'function') {
-                        callback({ exists: false });
+                    return callback({ exists: false, error: 'Game not found' });
+                }
+
+                // Check if the game is ongoing
+                const isOngoing = game.details?.status === 'on-going';
+
+                if (isOngoing) {
+                    // Validate the player's token if the game is ongoing
+                    try {
+                        const decodedToken = jwt.verify(playerToken, this.JWT_SECRET);
+                        const matchingPlayer = game.players.find(
+                            player => player.username === username && player.token === playerToken
+                        );
+
+                        if (matchingPlayer) {
+                            console.log(`Reconnecting player: ${username}`);
+                            matchingPlayer.id = socket.id; // Update the socket ID
+                            socket.join(gameCode);
+
+                            return callback({
+                                exists: true,
+                                navigateTo: '/game', // Navigate to game
+                                gameState: this.playersUpdate(gameCode),
+                                reconnected: true
+                            });
+                        } else {
+                            return callback({ exists: false, error: 'Invalid token or username mismatch' });
+                        }
+                    } catch (error) {
+                        console.error('Token verification failed:', error);
+                        return callback({ exists: false, error: 'Token verification failed' });
                     }
-                    return;
                 }
-    
-                const gameState = this.playersUpdate(gameCode);
-    
-                if (typeof callback === 'function') {
-                    callback({ 
-                        exists: true,
-                        gameState
-                    });
-                }
+
+                // If the game is not ongoing, return the current game state
+                return callback({
+                    exists: true,
+                    navigateTo: '/lobby', // Navigate to lobby
+                    gameState: this.playersUpdate(gameCode)
+                });
             } catch (error) {
                 console.error('Check game code error:', error);
-                if (typeof callback === 'function') {
-                    callback({ exists: false, error: 'Failed to check game code' });
-                }
+                return callback({ exists: false, error: 'Server error occurred' });
             }
-        });      
+        });
+
     
         // Join Game Handler
         socket.on('joinHost', ({ gameCode, playerToken }, callback = () => {}) => {
@@ -2132,6 +2185,7 @@ class GameManager {
 
         socket.on('startGame', ({ gameCode }) => {
             const game = this.games.get(gameCode);
+            game.details.status = 'on-going';
             if (game && game.host === socket.id) {
                 this.io.to(gameCode).emit('gameStarted');
                 this.io.to(gameCode).emit('playersUpdate', {
